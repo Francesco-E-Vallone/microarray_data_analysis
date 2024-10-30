@@ -11,14 +11,14 @@ library(ggplot2)
 #data retrieval####
 #CLL data (getting files) 
 getGEOSuppFiles("GSE75122")
-untar("GSE75122/GSE75122_RAW.tar", exdir = "dataCLL/")
+untar("GSE75122/GSE75122_RAW.tar", exdir = "dataCLL/") #need to create output folder
 
 #RS data
 getGEOSuppFiles("GSE171481")
-untar("GSE171481/GSE171481_RAW.tar", exdir = "dataRS/")
+untar("GSE171481/GSE171481_RAW.tar", exdir = "dataRS/") #need to create output folder as well
 
 #reading the files
-targetsfile <- read.delim("targets.txt")
+targetsfile <- read.delim("targets.txt") #unzipped files are then moved into a folder ("raw") for simplicity, then the file "targets.txt" specifying the file names and the groups (RS or CLL) was created  
 require(limma)
 
 targetsinfo <- targetsfile
@@ -36,7 +36,7 @@ project.bgcorrect <- backgroundCorrect(project, method = 'normexp')
 #data normalisation (quantile method)
 project.bgcorrect.norm <- normalizeBetweenArrays(project.bgcorrect,
                                                  method = 'quantile')
- # QC filtering ####
+ #QC filtering ####
 # filter out:
 #   - control probes
 #   - probes with no name
@@ -48,8 +48,8 @@ project.bgcorrect.norm.filt <- project.bgcorrect.norm[!Control & !NoSymbol & IsE
 dim(project.bgcorrect.norm)
 dim(project.bgcorrect.norm.filt) 
 
-# for replicate probes, replace values with the mean
-# ID is used to identify the replicates
+#for replicate probes, replace values with the mean
+#ID is used to identify the replicates
 project.bgcorrect.norm.filt.mean <- avereps(project.bgcorrect.norm.filt,
                                             ID = project.bgcorrect.norm.filt$genes$ProbeName)
 dim(project.bgcorrect.norm.filt.mean)
@@ -61,23 +61,23 @@ p <- pca(
   metadata = project.bgcorrect.norm.filt.mean$targets)
 biplot(p, colby = 'group', legendPosition = 'bottom')    
 
-# DGE analysis ####
+#DGE analysis ####
 targets <- project.bgcorrect.norm.filt.mean$targets
 targets$group <- factor(targets$group, levels = c('RS','CLL'))
 
-# Create the study design
+#creating the study design
 design <- model.matrix(~ 0 + targets$group)
 colnames(design) <- c('RS', 'CLL')
 
-# Fit the linear model on the study's data
+#fit the linear model on the study's data
 project.fitmodel <- lmFit(project.bgcorrect.norm.filt.mean, design)
 
-# Applying the empirical Bayes method to the fitted values
-# Acts as an extra normalisation step and aims to bring the different probe-wise variances to common values
+#applying the empirical Bayes method to the fitted values
+#acts as an extra normalisation step and aims to bring the different probe-wise variances to common values
 project.fitmodel.eBayes <- eBayes(project.fitmodel)
 names(project.fitmodel.eBayes)
 
-# Make individual contrasts: RS vs CLL
+#make individual contrasts: RS vs CLL
 res <- makeContrasts(res = 'RS-CLL', levels = design)
 res.fitmodel <- contrasts.fit(project.fitmodel.eBayes, res)
 res.fitmodel.eBayes <- eBayes(res.fitmodel)
@@ -91,18 +91,18 @@ toptable <- topTable(
 
 write.csv(toptable, "DEG U-RT1 vs CLL.txt")
 
-# Comparison of apoptotic genes ####
+#comparison of apoptotic genes ####
 apo_genes <- c("MCL1",
                "BCL2",
                "BCL2L1",
                "CDK9")
 
-# Selecting apo-related genes
+#selecting apo-related genes
 apo_mt <- project.bgcorrect.norm.filt.mean[project.bgcorrect.norm.filt.mean$genes$GeneName %in% apo_genes, ]
 dim(apo_mt)
 head(apo_mt)
 
-# Function to select the transcript isoform having the highest average expression
+#function to select the transcript isoform having the highest average expression
 select_highest_isoform <- function(data) {
   #calculate the average of the expression columns for each row, ignoring NAs
   data$average <- rowMeans(data[,-1], na.rm = TRUE) #assuming the first column is the symbol
@@ -118,7 +118,7 @@ select_highest_isoform <- function(data) {
   return(selected)
 }
 
-# Selecting highest isoform
+#selecting highest isoform
 expr_data <- data.frame(symbol = apo_mt$genes$GeneName,
                         apo_mt$E)
 expr_data <- select_highest_isoform(expr_data)
@@ -129,7 +129,7 @@ expr_data <- as.data.frame(expr_data)
 
 #write_xlsx(expr_data, "exp_data_apo.xlsx")
 
-# Performing PCA
+#performing PCA
 meta_apo <- data.frame(samples = colnames(expr_data)[-1],
                        condition = c(rep("U-RT1", 3), rep("CLL", 10)),
                        row.names = colnames(expr_data)[-1])
@@ -142,16 +142,16 @@ biplot(p_apo,
        lab = NULL,
        legendPosition = "right")
 
-# Barplot visualisation
-# reshaping expr_data to long format
+#barplot visualisation
+#reshaping expr_data to long format
 expr_long <- expr_data %>%
   pivot_longer(cols = -symbol, names_to = "samples", values_to = "expression")
 
-# merging with metadata
+#merging with metadata
 combined_data <- expr_long %>%
   left_join(meta_apo, by = "samples")
 
-# calculating mean and standard error for each group
+#calculating mean and standard error for each group
 summary_data <- combined_data %>%
   group_by(symbol, condition) %>%
   summarise(
@@ -161,12 +161,12 @@ summary_data <- combined_data %>%
   )
 print(summary_data) #checking SD
 
-# performing t-tests (two groups)
+#performing t-tests (two groups)
 t_test_results <- combined_data %>%
   group_by(symbol) %>%
   summarise(t_test_p_value = t.test(expression ~ condition, var.equal = T)$p.value, .groups = 'drop') #because of similar SD between groups, var.equal = T
 
-# adding significance levels based on p-values
+#adding significance levels based on p-values
 t_test_results <- t_test_results %>%
   mutate(significance = case_when(
     t_test_p_value < 0.001 ~ "***",
@@ -177,11 +177,11 @@ t_test_results <- t_test_results %>%
 
 print(t_test_results)
 
-# merging t-test results with summary data
+#merging t-test results with summary data
 summary_data <- summary_data %>%
   left_join(t_test_results, by = "symbol")
 
-# creating bar plot with error bars and jitter
+#creating bar plot with error bars and jitter
 ggplot(summary_data, aes(x = symbol, y = mean_expression, fill = condition)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
   geom_errorbar(aes(ymin = mean_expression - se_expression, 
@@ -195,10 +195,10 @@ ggplot(summary_data, aes(x = symbol, y = mean_expression, fill = condition)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1))
 
-# t-test results
+#t-test results
 print(t_test_results)
 
-# making good-looking table
+#making good-looking table
 require(kableExtra)
 rownames(expr_data) <- NULL
 colnames(expr_data)[-1] <- make.names(c(rep("U-RT1", 3), rep("CLL", 10)), unique = T)
